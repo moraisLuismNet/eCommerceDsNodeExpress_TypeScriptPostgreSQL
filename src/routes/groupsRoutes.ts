@@ -76,7 +76,15 @@ router.get('/:id', groupsController.getGroupWithRecords);
  *       201:
  *         description: Group created successfully
  */
-router.post('/', authMiddleware('Admin'), upload.single('Photo'), groupsController.createGroup);
+// Configure the file upload middleware to handle multipart/form-data
+const uploadIfExists = (req: any, res: any, next: any) => {
+    if (req.headers['content-type']?.includes('multipart/form-data')) {
+        return upload.single('Photo')(req, res, next);
+    }
+    next();
+};
+
+router.post('/', authMiddleware('Admin'), uploadIfExists, groupsController.createGroup);
 
 /**
  * @swagger
@@ -111,7 +119,7 @@ router.post('/', authMiddleware('Admin'), upload.single('Photo'), groupsControll
  *       200:
  *         description: Group updated successfully
  */
-router.put('/:id', authMiddleware('Admin'), upload.single('Photo'), groupsController.updateGroup);
+router.put('/:id', authMiddleware('Admin'), uploadIfExists, groupsController.updateGroup);
 
 /**
  * @swagger

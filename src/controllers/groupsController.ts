@@ -8,6 +8,7 @@ interface GroupRequest extends Request {
     body: {
         NameGroup?: string;
         MusicGenreId?: string | number;
+        ImageGroup?: string;
     };
     file?: Express.Multer.File & { filename: string };
 }
@@ -58,7 +59,7 @@ async function getGroupWithRecords(req: GroupRequest, res: Response): Promise<Re
 }
 
 async function createGroup(req: GroupRequest, res: Response): Promise<Response> {
-    const { NameGroup, MusicGenreId } = req.body;
+    const { NameGroup, MusicGenreId, ImageGroup } = req.body;
     
     if (!NameGroup || !MusicGenreId) {
         return res.status(400).json({ 
@@ -85,15 +86,38 @@ async function createGroup(req: GroupRequest, res: Response): Promise<Response> 
             });
         }
 
+        // Handle the image (URL or file)
+        let imagePath = null;
+        
+        if (req.file) {
+            // If there is a file uploaded, use that image
+            imagePath = `/img/${req.file.filename}`;
+        } else if (ImageGroup && ImageGroup.trim() !== '') {
+            // If there is an image URL and it's not empty, use it
+            imagePath = ImageGroup.trim();
+        }
+        // If there is neither a file nor a URL, imagePath will be null
+
+        console.log('Creating group with image:', {
+            file: req.file?.filename,
+            imageUrl: ImageGroup,
+            finalImage: imagePath,
+            body: req.body,
+            hasFile: !!req.file,
+            isImageUrlValid: ImageGroup ? ImageGroup.trim() !== '' : false
+        });
+
         const newGroup = {
-            NameGroup,
+            NameGroup: NameGroup.trim(),
             MusicGenreId: musicGenreId,
-            ImageGroup: req.file ? `/img/${req.file.filename}` : null
+            ImageGroup: imagePath  // Can be null, a URL, or the file path
         };
+        
+        console.log('Sending to service:', newGroup);
 
         const createdGroup = await groupService.create(newGroup);
         return res.status(201)
-        .location(`/api/groups/${createdGroup.IdGroup}`)
+            .location(`/api/groups/${createdGroup.IdGroup}`)
             .json({ success: true, data: createdGroup });
     } catch (error: unknown) {
         const errorMessage = error instanceof Error ? error.message : 'Failed to create group';
@@ -150,16 +174,47 @@ async function updateGroup(req: GroupRequest, res: Response): Promise<Response> 
             });
         }
 
+            // Handle the image
+        let imagePath = group.ImageGroup; // Keep the current default value
+        
+        if (req.file) {
+            // If a file is uploaded, use that image
+            imagePath = `/img/${req.file.filename}`;
+        } else if ('ImageGroup' in req.body) {
+            // If ImageGroup is explicitly sent in the body
+            if (req.body.ImageGroup && req.body.ImageGroup.trim() !== '') {
+                imagePath = req.body.ImageGroup.trim();
+            } else {
+                // If an empty string is sent, set it to null
+                imagePath = null;
+            }
+        }
+        // If there is neither a file nor ImageGroup in the body, keep the current value
+
+        console.log('Updating group with image data:', {
+            currentImage: group.ImageGroup,
+            newImage: req.body.ImageGroup,
+            finalImage: imagePath,
+            hasFile: !!req.file,
+            hasImageUrl: 'ImageGroup' in req.body
+        });
+
         const updatedGroupData = {
-            NameGroup,
+            NameGroup: NameGroup.trim(),
             MusicGenreId: musicGenreId,
-            ImageGroup: req.file ? `/img/${req.file.filename}` : group.ImageGroup || ''
+            ImageGroup: imagePath  // Can be null, the existing URL, or the new path/URL
         };
 
-        await groupService.update(groupId, updatedGroupData);
+        const success = await groupService.update(groupId, updatedGroupData);
+        if (!success) {
+            throw new Error('Failed to update group in database');
+        }
+
+        // Get the updated group to return it
+        const updatedGroup = await groupService.getById(groupId);
         return res.json({ 
             success: true, 
-            data: { IdGroup: groupId, ...updatedGroupData } 
+            data: updatedGroup 
         });
     } catch (error: unknown) {
         const errorMessage = error instanceof Error ? error.message : 'Failed to update group';

@@ -72,53 +72,71 @@ export async function getRecordsByGroupId(id: number): Promise<GroupWithRecords 
 export async function create(groupData: Omit<Group, 'IdGroup' | 'NameMusicGenre' | 'TotalRecords'>): Promise<Group> {
   const { NameGroup, ImageGroup, MusicGenreId } = groupData;
   
-  const [results] = await sequelize.query(
-    'INSERT INTO "Groups" ("NameGroup", "ImageGroup", "MusicGenreId") VALUES (:name, :image, :musicGenreId) RETURNING "IdGroup"',
-    {
-      replacements: {
-        name: NameGroup,
-        image: ImageGroup,
-        musicGenreId: MusicGenreId
-      },
-      type: 'INSERT' as const
-    }
-  );
+  // Ensure ImageGroup is null if it is empty or undefined
+  const finalImageGroup = ImageGroup?.trim() || null;
   
-  const insertedId = (results as any)[0].IdGroup;
-  return { IdGroup: insertedId, ...groupData };
+  console.log('Creating group in database with data:', {
+    NameGroup,
+    ImageGroup: finalImageGroup,
+    MusicGenreId,
+    typeOfImageGroup: typeof finalImageGroup
+  });
+  
+  try {
+    // Use Sequelize model to create the group
+    const result = await sequelize.models.Group.create({
+      NameGroup,
+      ImageGroup: finalImageGroup,
+      MusicGenreId
+    });
+    
+    const createdGroup = result.get({ plain: true });
+    console.log('Group created successfully:', createdGroup);
+    
+    // Verify the inserted group
+    const inserted = await sequelize.models.Group.findByPk(createdGroup.IdGroup);
+    console.log('Inserted group from database:', inserted?.get({ plain: true }));
+    
+    return createdGroup;
+  } catch (error) {
+    console.error('Error in groupService.create:', error);
+    throw error;
+  }
 }
 
 export async function update(id: number, groupData: Partial<Omit<Group, 'IdGroup' | 'NameMusicGenre' | 'TotalRecords'>>): Promise<boolean> {
-  const fields = [];
-  const replacements: { [key: string]: any } = { id };
-  
-  if (groupData.NameGroup !== undefined) {
-    fields.push('"NameGroup" = :name');
-    replacements.name = groupData.NameGroup;
+  try {
+    const updateData: any = { ...groupData };
+    
+    // Ensure ImageGroup is null if it is empty or undefined
+    if ('ImageGroup' in groupData) {
+      updateData.ImageGroup = groupData.ImageGroup?.trim() || null;
+    }
+    
+    console.log('Updating group with data:', {
+      id,
+      updateData,
+      hasImageGroup: 'ImageGroup' in groupData
+    });
+    
+    // Use Sequelize model to update the group
+    const [affectedCount] = await sequelize.models.Group.update(updateData, {
+      where: { IdGroup: id }
+    });
+    
+    console.log('Update result:', { affectedCount });
+    
+    // Verify the updated group
+    if (affectedCount > 0) {
+      const updatedGroup = await sequelize.models.Group.findByPk(id);
+      console.log('Updated group from database:', updatedGroup?.get({ plain: true }));
+    }
+    
+    return affectedCount > 0;
+  } catch (error) {
+    console.error('Error in groupService.update:', error);
+    throw error;
   }
-  if (groupData.ImageGroup !== undefined) {
-    fields.push('"ImageGroup" = :image');
-    replacements.image = groupData.ImageGroup;
-  }
-  if (groupData.MusicGenreId !== undefined) {
-    fields.push('"MusicGenreId" = :musicGenreId');
-    replacements.musicGenreId = groupData.MusicGenreId;
-  }
-  
-  if (fields.length === 0) return false;
-  
-  const query = `
-    UPDATE "Groups" 
-    SET ${fields.join(', ')}
-    WHERE "IdGroup" = :id
-  `;
-  
-  const [_, rowCount] = await sequelize.query(query, {
-    replacements,
-    type: 'UPDATE' as const
-  });
-  
-  return (rowCount as number) > 0;
 }
 
 export async function remove(id: number): Promise<boolean> {
